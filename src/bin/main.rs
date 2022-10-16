@@ -1,18 +1,9 @@
-use listener::*;
-use std::net::TcpListener;
-
-
-
+use rusty_server::*;
 fn main() {
-    const PORT: &str = "7878";
-    let listener = TcpListener::bind(String::from("127.0.0.1:")+ PORT).unwrap();
-    let pool = thread_pool::ThreadPool::new(4);
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        pool.execute(|| {
-            handle_connection(stream);
-        });
-    }
-    println!("Shutting the server down");
-}
+    let mut myserver = server::Server::new();
+    myserver.bind("7878");
 
+    myserver.get("/", "public/index.html");
+    myserver.get("/sleep", "public/sleep.html");
+    myserver.start();
+}

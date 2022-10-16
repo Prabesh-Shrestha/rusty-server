@@ -3,7 +3,6 @@ pub mod thread_pool {
     use std::sync::Arc;
     use std::sync::Mutex;
     use std::thread;
-
     type Job = Box<dyn FnOnce() + Send + 'static>;
 
     enum ThreadState {
@@ -44,6 +43,7 @@ pub mod thread_pool {
     impl ThreadPool {
         pub fn new(size: usize) -> ThreadPool {
             assert!(size > 0);
+
             let (sender, receiver) = mpsc::channel();
             let receiver = Arc::new(Mutex::new(receiver));
             let mut workers = Vec::with_capacity(size);
@@ -76,59 +76,82 @@ pub mod thread_pool {
 }
 
 pub mod server {
-    struct Server {
-        req_hash: HashMap<String, String>,
-    }
-
+    use crate::thread_pool;
     use std::collections::HashMap;
     use std::fs;
     use std::io::prelude::*;
+    use std::net::TcpListener;
     use std::net::TcpStream;
-
-    pub fn check_req(buffer: [u8; 1024]) -> (String, String) {
-        let mut req_hash: HashMap<String, String> = HashMap::new();
-        let buffer = String::from_utf8_lossy(&buffer[..]);
-        req_hash.insert(
-            "GET /sleep HTTP/1.1\r\n".to_string(),
-            "public/index.html".to_string(),
-        );
-        req_hash.insert(
-            "GET /sleep HTTP/1.1\r\n".to_string(),
-            "public/sleep.html".to_string(),
-        );
-        for req in req_hash.keys() {
-            if buffer.starts_with(req) {
-                return (
-                    req.to_string(),
-                    match req_hash.get(&req.clone()) {
-                        Some(addr) => addr.to_string(),
-                        None => {
-                            // handle error
-                            panic!("error while handleing {}", req);
-                        }
-                    },
-                );
+    #[derive(Clone)]
+    pub struct Server {
+        pub req_hash: HashMap<String, String>,
+        pub port: String 
+    }
+    impl Server {
+        pub fn new() -> Server   {
+            Server {
+                req_hash: HashMap::new(),
+                port: "8080".to_string(),
             }
         }
-        (
-            "HTTP/1.1 404 NOT FOUND".to_string(),
-            "public/404.html".to_string(),
-        )
-    }
+        pub fn get(&mut self, path: &str, serve: &str) {
+            self.req_hash
+                .insert(format!("GET {} HTTP/1.1\r\n", path), serve.to_string());
+        }
 
-    pub fn handle_connection(mut stream: TcpStream) {
-        let mut buffer = [0; 1024];
-        stream.read(&mut buffer).unwrap();
-        println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
-        let (status_line, filename) = check_req(buffer);
-        let content = fs::read_to_string(filename).unwrap();
-        let responce = format!(
-            "{}\r\nContent-Lenght: {}\r\n\r\n{}",
-            status_line,
-            content.len(),
-            content
-        );
-        stream.write(responce.as_bytes()).unwrap();
-        stream.flush().unwrap();
+        fn check_req(&mut self, buffer: [u8; 1024]) -> (String, String) {
+            let buffer = String::from_utf8_lossy(&buffer[..]);
+            for req in self.req_hash.keys() {
+                if buffer.starts_with(req) {
+                    return (
+                        "HTTP/1.1 200 OK".to_string(),
+                        match self.req_hash.get(&req.clone()) {
+                            Some(addr) => addr.to_string(),
+                            None => {
+                                // handle error
+                                panic!("error while handleing {}", req);
+                            }
+                        },
+                    );
+                }
+            }
+            (
+                "HTTP/1.1 404 NOT FOUND".to_string(),
+                "public/404.html".to_string(),
+            )
+        }
+
+        fn handle_connection(&mut self, mut stream: TcpStream) {
+            let mut buffer = [0; 1024];
+            stream.read(&mut buffer).unwrap();
+            let (status_line, mut content) = self.check_req(buffer.clone());
+            if content.starts_with("public") {
+                content = fs::read_to_string(content).unwrap();
+            }
+
+            let responce = format!(
+                "{}\r\nContent-Lenght: {}\r\n\r\n{}",
+                status_line,
+                content.len(),
+                content
+            );
+            stream.write(responce.as_bytes()).unwrap();
+            stream.flush().unwrap();
+        }
+        pub fn bind(&mut self, port: &str) {
+            self.port = port.to_string();
+        }
+        pub fn start(&self) {
+            let listener = TcpListener::bind(String::from("127.0.0.1:") + &self.port).unwrap();
+            let pool = thread_pool::ThreadPool::new(4);
+            for stream in listener.incoming() {
+                let stream = stream.unwrap();
+                let mut inst = self.clone();
+                pool.execute(move || {
+                    inst.handle_connection(stream);
+                });
+            }
+            println!("Shutting the server down");
+        }
     }
 }
