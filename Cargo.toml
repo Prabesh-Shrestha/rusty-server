@@ -2,6 +2,7 @@
 name = "rusty-server"
 version = "0.1.0"
 edition = "2021"
+licence = "MIT"
 licence-file = "LICENCE"
 description = "a library to make small webservers"
 readme = "README.md"
