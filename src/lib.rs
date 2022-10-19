@@ -9,6 +9,8 @@ pub mod thread_pool {
         Doing(Job),
         Terminate,
     }
+
+    #[warn(dead_code)]
     pub struct Worker {
         id: usize,
         thread: Option<thread::JoinHandle<()>>,
@@ -82,21 +84,39 @@ pub mod server {
     use std::io::prelude::*;
     use std::net::TcpListener;
     use std::net::TcpStream;
+
+    #[derive(Clone)]
+    pub enum Content {
+        Fn(fn(String) -> String),
+        Addr(String),
+    }
     #[derive(Clone)]
     pub struct Server {
-        pub req_hash: HashMap<String, String>,
-        pub port: String 
+        pub req_hash: HashMap<String, Content>,
+        pub port: String,
     }
+
     impl Server {
-        pub fn new() -> Server   {
+        pub fn new() -> Server {
             Server {
                 req_hash: HashMap::new(),
                 port: "8080".to_string(),
             }
         }
-        pub fn get(&mut self, path: &str, serve: &str) {
-            self.req_hash
-                .insert(format!("GET {} HTTP/1.1\r\n", path), serve.to_string());
+
+        pub fn get(&mut self, path: &str, serve: Content) {
+            match serve {
+                Content::Fn(f) => {
+                    self.req_hash
+                        .insert(format!("GET {} HTTP/1.1\r\n", path), Content::Fn(f));
+                }
+                Content::Addr(serve) => {
+                    self.req_hash.insert(
+                        format!("GET {} HTTP/1.1\r\n", path),
+                        Content::Addr(serve.to_string()),
+                    );
+                }
+            }
         }
 
         fn check_req(&mut self, buffer: [u8; 1024]) -> (String, String) {
@@ -105,8 +125,11 @@ pub mod server {
                 if buffer.starts_with(req) {
                     return (
                         "HTTP/1.1 200 OK".to_string(),
-                        match self.req_hash.get(&req.clone()) {
-                            Some(addr) => addr.to_string(),
+                        match self.req_hash.clone().get(&req.clone()) {
+                            Some(content) => match &content {
+                                Content::Fn(f) => f(buffer.clone().to_string()),
+                                Content::Addr(s) => fs::read_to_string(s).unwrap(),
+                            },
                             None => {
                                 // handle error
                                 panic!("error while handleing {}", req);
@@ -124,10 +147,7 @@ pub mod server {
         fn handle_connection(&mut self, mut stream: TcpStream) {
             let mut buffer = [0; 1024];
             stream.read(&mut buffer).unwrap();
-            let (status_line, mut content) = self.check_req(buffer.clone());
-            if content.starts_with("public") {
-                content = fs::read_to_string(content).unwrap();
-            }
+            let (status_line, content) = self.check_req(buffer.clone());
 
             let responce = format!(
                 "{}\r\nContent-Lenght: {}\r\n\r\n{}",
