@@ -20,11 +20,11 @@ pub mod thread_pool {
                 let state = receiver.lock().unwrap().recv().unwrap();
                 match state {
                     ThreadState::Doing(job) => {
-                        println!("Worder {}, got a job; executing.", id);
+                        // println!("Worder {}, got a job; executing.", id);
                         job();
                     }
                     ThreadState::Terminate => {
-                        println!("Worker {} was told to terminate.", id);
+                        // println!("Worker {} was told to terminate.", id);
                         break;
                     }
                 }
@@ -66,7 +66,7 @@ pub mod thread_pool {
                 self.sender.send(ThreadState::Terminate).unwrap();
             }
             for worker in &mut self.workers {
-                println!("shutting down worker {}", worker.id);
+                // println!("shutting down worker {}", worker.id);
                 if let Some(thread) = worker.thread.take() {
                     thread.join().unwrap();
                 }
