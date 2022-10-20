@@ -15,7 +15,7 @@ rusty-server application created using Rust and HTML.
 2. Clone the forked repository to your local machine.
 
 ```markdown
-git clone https://github.com/your-username/rusty-server.git
+git clone https://github.com/Prabesh-Shrestha/rusty-server.git
 ```
 
 3. change the present working directory
