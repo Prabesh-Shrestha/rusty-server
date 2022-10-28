@@ -1,5 +1,5 @@
-/target
-**/target/**
-public/
-/src/bin
+# target
+# **/target/**
+# public
+# /src/bin
 
